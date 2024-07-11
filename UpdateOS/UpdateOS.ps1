@@ -25,6 +25,9 @@
 .EXTERNALSCRIPTDEPENDENCIES 
 
 .RELEASENOTES
+Version CVMMPA: change tag and log directories to CVMMPA
+                inclusion of NETFX3 install here rather than in AutopilotBranding
+			    part of change to call UpdateOS from intune platform script rather than as win32 app
 Version 1.9:  Added -ExcludeUpdates switch.
 Version 1.8:  Added logic to pass the -ExcludeDrivers switch when relaunching as 64-bit.
 Version 1.7:  Switched to Windows Update COM objects.
@@ -72,18 +75,43 @@ Process {
     }
 
     # Create a tag file just so Intune knows this was installed
-    if (-not (Test-Path "$($env:ProgramData)\Microsoft\UpdateOS")) {
-        Mkdir "$($env:ProgramData)\Microsoft\UpdateOS"
+    if (-not (Test-Path "$($env:ProgramData)\CVMMPA")) {
+        Mkdir "$($env:ProgramData)\CVMMPA"
     }
-    Set-Content -Path "$($env:ProgramData)\Microsoft\UpdateOS\UpdateOS.ps1.tag" -Value "Installed"
+    Set-Content -Path "$($env:ProgramData)\CVMMPA\UpdateOS.tag" -Value "Start Script $(get-date)"
 
     # Start logging
-    Start-Transcript "$($env:ProgramData)\Microsoft\UpdateOS\UpdateOS.log"
+    Start-Transcript "$($env:ProgramData)\CVMMPA\UpdateOS.log"
 
     # Main logic
     $script:needReboot = $false
 
-    # Opt into Microsoft Update
+<# # This block of logic tries to install NetFX here instead of in AutopilotBranding
+    currently commented out ias it was causing a problem and not really needed anyways.
+
+$ci = get-computerinfo
+write-host "OSversion:$($ci.OsName)"
+write-host "OSBuild:$($ci.OsBuildNumber)"
+
+$currentWU = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -ErrorAction Ignore).UseWuServer
+if ($currentWU -eq 1) {
+	write-host "Turning off WSUS"
+	Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU"  -Name "UseWuServer" -Value 0
+	Restart-Service wuauserv -force
+}
+write-host "Adding Windows feature: $_"
+#Add-WindowsCapability -Online -Name NetFX3~~~~ -ErrorAction SilentlyContinue | Out-Null
+#Add-WindowsCapability -Online -Name NetFX3~~~~ -ErrorAction Continue
+
+if ($currentWU -eq 1) {
+	write-host "Turning on WSUS"
+	Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU"  -Name "UseWuServer" -Value 1
+	Restart-Service wuauserv
+}
+### end of NetFx block 
+ #>
+ 
+ # Opt into Microsoft Update
     $ts = get-date -f "yyyy/MM/dd hh:mm:ss tt"
     Write-Output "$ts Opting into Microsoft Update"
     $ServiceManager = New-Object -ComObject "Microsoft.Update.ServiceManager"
@@ -150,6 +178,8 @@ Process {
         Write-Host "$ts Windows Update indicated that no reboot is required."
     }
 
+	Add-Content -Path "$($env:ProgramData)\CVMMPA\UpdateOS.tag" -Value "Completed Script $(get-date)"
+
     # For whatever reason, the reboot needed flag is not always being properly set.  So we always want to force a reboot.
     # If this script (as an app) is being used as a dependent app, then a hard reboot is needed to get the "main" app to
     # install.
@@ -171,6 +201,7 @@ Process {
     }
     else {
         Write-Host "$ts Skipping reboot based on Reboot parameter (None)"
+        Stop-Transcript
         Exit 0
     }
 
